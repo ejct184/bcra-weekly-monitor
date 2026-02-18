@@ -1,0 +1,21 @@
+# Environment
+.env
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Data files (keep Excel, ignore generated)
+data/charts/*.png
+data/pdf_texts/
+data/state.json
+data/summaries_cache.json
+data/digest_preview.html
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

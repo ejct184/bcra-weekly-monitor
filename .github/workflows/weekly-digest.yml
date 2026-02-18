@@ -1,0 +1,57 @@
+name: BCRA Weekly Digest
+
+on:
+  schedule:
+    # Monday at 10:00 UTC (7:00 Argentina time)
+    - cron: '0 10 * * 1'
+
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Number of days to look back'
+        required: false
+        default: '7'
+      dry_run:
+        description: 'Dry run (no email sent)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  send-digest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run digest
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python -m src.main --dry-run --days ${{ inputs.days || '7' }}
+          else
+            python -m src.main --days ${{ inputs.days || '7' }}
+          fi
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Upload digest preview (on failure or dry run)
+        if: failure() || inputs.dry_run
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-preview
+          path: data/digest_preview.html
+          retention-days: 7
