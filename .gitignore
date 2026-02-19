@@ -8,9 +8,8 @@ __pycache__/
 # Data files (keep Excel, ignore generated)
 data/charts/*.png
 data/pdf_texts/
-data/state.json
-data/summaries_cache.json
 data/digest_preview.html
+# Note: state.json and summaries_cache.json are tracked to persist between runs
 
 # IDE
 .vscode/

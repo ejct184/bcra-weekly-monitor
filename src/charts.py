@@ -62,6 +62,7 @@ def create_chart(
     filename: str,
     color: str = "#2E86AB",
     show_zero_line: bool = False,
+    ylim: tuple = None,
 ) -> Path:
     """Create a single chart and save to file."""
     setup_publication_style()
@@ -72,6 +73,10 @@ def create_chart(
     # Plot data
     ax.plot(dates, values, color=color, linewidth=1.5)
     ax.fill_between(dates, values, alpha=0.1, color=color)
+
+    # Set y-axis limits if specified
+    if ylim:
+        ax.set_ylim(ylim)
 
     # Zero line if needed
     if show_zero_line:
@@ -170,6 +175,14 @@ def generate_exchange_rate_chart() -> Path:
     data = df[["fecha", series]].dropna().copy()
     data = filter_last_n_days(data, CHART_DAYS)
 
+    # Set y-axis limits: 1000 to 1700, with dynamic upper limit if data exceeds 1700
+    y_min = 1000
+    y_max = 1700
+    max_value = data[series].max()
+    if max_value > y_max:
+        # Add 10% margin above the max value
+        y_max = max_value * 1.1
+
     return create_chart(
         dates=data["fecha"],
         values=data[series],
@@ -178,6 +191,7 @@ def generate_exchange_rate_chart() -> Path:
         filename="tipo_cambio_nivel.png",
         color="#C73E1D",
         show_zero_line=False,
+        ylim=(y_min, y_max),
     )
 
 

@@ -172,7 +172,6 @@
                 <tr>
                     <td>
                         {{ row.name }}
-                        {% if row.is_new %}<span class="new-badge">NUEVO</span>{% endif %}
                     </td>
                     <td>{{ row.value }}</td>
                     <td style="color: #718096; font-size: 12px;">{{ row.value_date }}</td>
@@ -212,7 +211,7 @@
                 {{ item.title }}
                 {% if item.is_new %}<span class="new-badge">NUEVO</span>{% endif %}
             </div>
-            <div class="news-date">{{ item.date }}</div>
+            <div class="news-date">Última publicación: {{ item.date }}</div>
             {% if item.summary %}
             <div class="summary-box">{{ item.summary | format_summary | safe }}</div>
             {% endif %}
@@ -232,7 +231,7 @@
                 {{ item.title }}
                 {% if item.is_new %}<span class="new-badge">NUEVO</span>{% endif %}
             </div>
-            <div class="news-date">{{ item.date }}</div>
+            <div class="news-date">Última publicación: {{ item.date }}</div>
             {% if item.summary %}
             <div class="summary-box">{{ item.summary | format_summary | safe }}</div>
             {% endif %}

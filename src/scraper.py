@@ -15,6 +15,7 @@ from .config import (
     BCRA_NEWS_API,
     BCRA_INFORMES_URL,
     BCRA_POLITICA_URL,
+    BCRA_COMUNICADOS_URL,
     STATE_FILE,
     DATA_DIR,
 )
@@ -291,23 +292,93 @@ def scrape_informes() -> List[ReportItem]:
     return items
 
 
+def scrape_latest_comunicado() -> Optional[PolicyItem]:
+    """Scrape the latest comunicado from the comunicados page.
+
+    Returns only the most recent comunicado de política monetaria.
+    The page has a table structure with rows containing:
+    - First cell: link with title
+    - Second cell: date (e.g., "15 dic 2025")
+    """
+    try:
+        response = requests.get(BCRA_COMUNICADOS_URL, timeout=30)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Find table rows - comunicados are in a table
+        for row in soup.find_all("tr"):
+            cells = row.find_all("td")
+            if len(cells) < 2:
+                continue
+
+            # First cell should have the link
+            link = cells[0].find("a", href=True)
+            if not link:
+                continue
+
+            href = link["href"]
+            title = link.get_text(strip=True)
+
+            # Skip short titles (navigation links)
+            if len(title) < 15:
+                continue
+
+            # Skip IPOM links - those are handled separately
+            title_lower = title.lower()
+            if "ipom" in title_lower or "informe de política monetaria" in title_lower:
+                continue
+
+            # Must be a politica-monetaria or noticias page
+            if "/politica-monetaria/" not in href and "/noticias/" not in href:
+                continue
+
+            # Generate ID from URL
+            item_id = href.rstrip("/").split("/")[-1].replace(".pdf", "")
+
+            full_url = href if href.startswith("http") else f"https://www.bcra.gob.ar{href}"
+
+            # Second cell has the date (e.g., "15 dic 2025")
+            date_str = cells[1].get_text(strip=True) if len(cells) > 1 else ""
+            parsed_date = parse_short_spanish_date(date_str)
+            if parsed_date:
+                formatted_date = format_date_spanish(parsed_date)
+            else:
+                formatted_date = date_str if date_str else datetime.now().strftime("%Y-%m-%d")
+
+            # Use actual title from the page, prefixed with "Comunicado:"
+            display_title = f"Comunicado: {title}"
+
+            return PolicyItem(
+                id=item_id,
+                title=display_title,
+                date=formatted_date,
+                url=full_url,
+                pdf_url=None,
+                category="Comunicado",
+            )
+
+    except Exception as e:
+        print(f"Error scraping comunicados: {e}")
+
+    return None
+
+
 def scrape_politica_monetaria() -> List[PolicyItem]:
     """Scrape monetary policy page for IPOM and Comunicados.
 
     Only captures:
     - Informe de Política Monetaria (IPOM) - only the most recent one
-    - Comunicados de Política Monetaria
+    - Comunicados de Política Monetaria - only the most recent one
     """
     items = []
     seen_ids = set()
     ipom_count = 0
     MAX_IPOM = 1  # Only capture the most recent IPOM
 
-    # Patterns to match
-    WANTED_ITEMS = [
+    # Patterns to match for IPOM
+    IPOM_PATTERNS = [
         "informe de política monetaria",
         "ipom",
-        "comunicado",
     ]
 
     try:
@@ -315,7 +386,7 @@ def scrape_politica_monetaria() -> List[PolicyItem]:
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # First, try to find items in table rows (for IPOM)
+        # Find IPOM in table rows
         for row in soup.find_all("tr"):
             cells = row.find_all("td")
             if len(cells) >= 4:
@@ -327,15 +398,16 @@ def scrape_politica_monetaria() -> List[PolicyItem]:
                 text = link.get_text(strip=True)
                 text_lower = text.lower()
 
-                if not any(pattern in text_lower for pattern in WANTED_ITEMS):
+                # Only look for IPOM here
+                is_ipom = any(pattern in text_lower for pattern in IPOM_PATTERNS)
+                if not is_ipom:
                     continue
 
                 if len(text) < 10:
                     continue
 
-                # Check if it's an IPOM and we've already captured enough
-                is_ipom = "ipom" in text_lower or "informe de política monetaria" in text_lower
-                if is_ipom and ipom_count >= MAX_IPOM:
+                # Check if we've already captured enough IPOMs
+                if ipom_count >= MAX_IPOM:
                     continue
 
                 item_id = href.rstrip("/").split("/")[-1].replace(".pdf", "").replace(".asp", "")
@@ -352,8 +424,7 @@ def scrape_politica_monetaria() -> List[PolicyItem]:
                 else:
                     formatted_date = date_str if date_str else datetime.now().strftime("%Y-%m-%d")
 
-                if is_ipom:
-                    ipom_count += 1
+                ipom_count += 1
 
                 full_url = href if href.startswith("http") else f"https://www.bcra.gob.ar{href}"
 
@@ -361,11 +432,8 @@ def scrape_politica_monetaria() -> List[PolicyItem]:
                 if href.endswith(".pdf"):
                     pdf_url = full_url
                 else:
-                    # For IPOM, try to navigate to the page and find the PDF
                     pdf_url = extract_pdf_from_page(full_url)
                     time.sleep(0.3)  # Rate limiting
-
-                category = "IPOM" if ("ipom" in text_lower or "informe de política monetaria" in text_lower) else "Comunicado"
 
                 items.append(PolicyItem(
                     id=item_id,
@@ -373,55 +441,16 @@ def scrape_politica_monetaria() -> List[PolicyItem]:
                     date=formatted_date,
                     url=full_url,
                     pdf_url=pdf_url,
-                    category=category,
+                    category="IPOM",
                 ))
-
-        # Also look for comunicados in list items or divs (different layout)
-        for link in soup.find_all("a", href=True):
-            href = link["href"]
-            text = link.get_text(strip=True)
-            text_lower = text.lower()
-
-            # Only check comunicados here (IPOM already captured from tables)
-            if "comunicado" not in text_lower:
-                continue
-
-            if len(text) < 10:
-                continue
-
-            item_id = href.rstrip("/").split("/")[-1].replace(".pdf", "").replace(".asp", "")
-
-            if item_id in seen_ids:
-                continue
-            seen_ids.add(item_id)
-
-            pdf_url = href if href.endswith(".pdf") else None
-            full_url = href if href.startswith("http") else f"https://www.bcra.gob.ar{href}"
-
-            # Try to find date near the link
-            parent = link.find_parent(["li", "div", "p"])
-            date_found = None
-            if parent:
-                parent_text = parent.get_text()
-                # Look for date pattern like "15 dic 2025"
-                import re
-                date_match = re.search(r'(\d{1,2}\s+(?:ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\s+\d{4})', parent_text, re.IGNORECASE)
-                if date_match:
-                    parsed_date = parse_short_spanish_date(date_match.group(1))
-                    if parsed_date:
-                        date_found = format_date_spanish(parsed_date)
-
-            items.append(PolicyItem(
-                id=item_id,
-                title=text,
-                date=date_found or datetime.now().strftime("%Y-%m-%d"),
-                url=full_url,
-                pdf_url=pdf_url,
-                category="Comunicado",
-            ))
 
     except Exception as e:
         print(f"Error scraping política monetaria: {e}")
+
+    # Also get the latest comunicado from the dedicated comunicados page
+    comunicado = scrape_latest_comunicado()
+    if comunicado and comunicado.id not in seen_ids:
+        items.append(comunicado)
 
     return items
 

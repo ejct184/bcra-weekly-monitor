@@ -44,6 +44,7 @@ SERIES_DISPLAY_NAMES = {
 BCRA_NEWS_API = "https://www.bcra.gob.ar/wp-json/bcra/v1/noticias"
 BCRA_INFORMES_URL = "https://www.bcra.gob.ar/informes/"
 BCRA_POLITICA_URL = "https://www.bcra.gob.ar/politica-monetaria/"
+BCRA_COMUNICADOS_URL = "https://www.bcra.gob.ar/ultimos-comunicados-de-politica-monetaria/"
 
 # Chart settings
 CHART_WIDTH_PX = 600

@@ -2,10 +2,12 @@
 
 import os
 import json
-from typing import Optional
+from typing import Optional, Tuple
 from dataclasses import dataclass
 from pathlib import Path
 
+import requests
+from bs4 import BeautifulSoup
 from anthropic import Anthropic
 
 from .config import DATA_DIR
@@ -144,6 +146,53 @@ Resumen:"""
         )
 
 
+def extract_text_from_html(url: str) -> Tuple[bool, str, Optional[str]]:
+    """Extract main content text from an HTML page.
+
+    Returns: (success, text, error)
+    """
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Remove script and style elements
+        for element in soup(["script", "style", "nav", "header", "footer", "aside"]):
+            element.decompose()
+
+        # Try to find the main content area
+        main_content = None
+
+        # Look for common content containers
+        for selector in ["article", "main", ".content", ".post-content", ".entry-content", "#content"]:
+            if selector.startswith(".") or selector.startswith("#"):
+                main_content = soup.select_one(selector)
+            else:
+                main_content = soup.find(selector)
+            if main_content:
+                break
+
+        # If no specific container found, use body
+        if not main_content:
+            main_content = soup.find("body") or soup
+
+        # Extract text
+        text = main_content.get_text(separator="\n", strip=True)
+
+        # Clean up multiple newlines
+        import re
+        text = re.sub(r'\n{3,}', '\n\n', text)
+
+        if len(text) < 100:
+            return False, "", "HTML content too short"
+
+        return True, text, None
+
+    except Exception as e:
+        return False, "", str(e)
+
+
 def summarize_pdf_url(url: str, title: str) -> SummaryResult:
     """Download PDF and generate summary."""
     # Download and extract text
@@ -165,6 +214,20 @@ def summarize_pdf_url(url: str, title: str) -> SummaryResult:
 
     # Generate summary
     return generate_summary(content.text, title)
+
+
+def summarize_html_url(url: str, title: str) -> SummaryResult:
+    """Extract HTML content and generate summary."""
+    success, text, error = extract_text_from_html(url)
+
+    if not success:
+        return SummaryResult(
+            success=False,
+            summary="",
+            error=f"Failed to extract HTML: {error}"
+        )
+
+    return generate_summary(text, title)
 
 
 def summarize_report(report) -> Optional[str]:
@@ -194,13 +257,20 @@ def summarize_policy(policy) -> Optional[str]:
     if not needs_summary(policy.title, "policy"):
         return None
 
-    url = getattr(policy, 'pdf_url', None) or getattr(policy, 'url', '')
+    pdf_url = getattr(policy, 'pdf_url', None)
+    html_url = getattr(policy, 'url', '')
 
-    if not url:
+    if not pdf_url and not html_url:
         return None
 
     print(f"  Generating summary for: {policy.title[:50]}...")
-    result = summarize_pdf_url(url, policy.title)
+
+    # If there's a PDF URL, use PDF extraction
+    if pdf_url:
+        result = summarize_pdf_url(pdf_url, policy.title)
+    else:
+        # Otherwise, use HTML extraction (for comunicados)
+        result = summarize_html_url(html_url, policy.title)
 
     if result.success:
         print(f"    [OK] Summary generated ({len(result.summary)} chars)")
