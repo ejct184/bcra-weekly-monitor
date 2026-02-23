@@ -2,8 +2,8 @@ name: BCRA Weekly Digest
 
 on:
   schedule:
-    # Monday at 17:00 UTC (11:00 Mexico City time)
-    - cron: '0 17 * * 1'
+    # Monday at 16:00 UTC (10:00 Mexico City time)
+    - cron: '0 16 * * 1'
 
   # Allow manual trigger
   workflow_dispatch:
