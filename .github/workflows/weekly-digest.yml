@@ -38,6 +38,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Update Excel data from BCRA API
+        run: python -m src.data_updater
+
       - name: Run digest
         run: |
           if [ "${{ inputs.dry_run }}" = "true" ]; then
@@ -51,13 +54,13 @@ jobs:
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
-      - name: Commit state and cache files
+      - name: Commit updated files
         if: success() && inputs.dry_run != true
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add data/state.json data/summaries_cache.json
-          git diff --staged --quiet || git commit -m "Update state and summaries cache after digest run"
+          git add seriesAPI_BCRA_Digest.xlsx data/state.json data/summaries_cache.json
+          git diff --staged --quiet || git commit -m "Data $(date +%d/%m)"
           git push
 
       - name: Upload digest preview (on failure or dry run)

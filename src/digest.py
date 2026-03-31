@@ -105,6 +105,7 @@ def get_chart_infos() -> List[ChartInfo]:
         ("base_monetaria_pct_change.png", "Base Monetaria - Var. Mensual", "chart_base"),
         ("m2_pct_change.png", "M2 Transaccional - Var. Mensual", "chart_m2"),
         ("tipo_cambio_nivel.png", "Tipo de Cambio Oficial", "chart_tc"),
+        ("badlar_nivel.png", "Tasa BADLAR", "chart_badlar"),
     ]
 
     for filename, title, cid in chart_files:

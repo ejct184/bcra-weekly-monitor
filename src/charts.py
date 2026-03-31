@@ -195,6 +195,33 @@ def generate_exchange_rate_chart() -> Path:
     )
 
 
+def generate_badlar_chart() -> Path:
+    """Generate Tasa BADLAR level chart."""
+    df = read_excel_data()
+    series = "Tasa de interés BADLAR de bancos privados"
+    data = df[["fecha", series]].dropna().copy()
+    data = filter_last_n_days(data, CHART_DAYS)
+
+    # Set y-axis limits: 0 to 40%, with dynamic upper limit if data exceeds 40
+    y_min = 0
+    y_max = 40
+    max_value = data[series].max()
+    if max_value > y_max:
+        # Add 10% margin above the max value
+        y_max = max_value * 1.1
+
+    return create_chart(
+        dates=data["fecha"],
+        values=data[series],
+        title="Tasa BADLAR",
+        ylabel="Tasa (%)",
+        filename="badlar_nivel.png",
+        color="#6B46C1",
+        show_zero_line=False,
+        ylim=(y_min, y_max),
+    )
+
+
 def generate_all_charts() -> dict:
     """Generate all charts and return paths."""
     charts = {}
@@ -210,6 +237,9 @@ def generate_all_charts() -> dict:
 
     charts["tipo_cambio"] = generate_exchange_rate_chart()
     print(f"Generated: {charts['tipo_cambio']}")
+
+    charts["badlar"] = generate_badlar_chart()
+    print(f"Generated: {charts['badlar']}")
 
     return charts
 

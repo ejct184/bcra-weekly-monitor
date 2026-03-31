@@ -211,12 +211,18 @@ def extract_pdf_from_page(page_url: str) -> Optional[str]:
 def scrape_informes() -> List[ReportItem]:
     """Scrape the informes page for specific reports only.
 
-    Only captures:
-    - Informe Monetario Mensual
-    - Relevamiento de Expectativas de Mercado (REM)
+    Only captures the most recent of each:
+    - Informe Monetario Mensual (1 most recent)
+    - Relevamiento de Expectativas de Mercado (REM) (1 most recent)
     """
     items = []
     seen_ids = set()
+
+    # Limits per report type (only capture the most recent of each)
+    MAX_INFORME_MONETARIO = 1
+    MAX_REM = 1
+    informe_monetario_count = 0
+    rem_count = 0
 
     # Specific patterns to match (case insensitive)
     WANTED_REPORTS = [
@@ -252,6 +258,15 @@ def scrape_informes() -> List[ReportItem]:
             if len(text) < 10:
                 continue
 
+            # Check limits per report type - only capture the most recent of each
+            is_informe_monetario = "informe monetario mensual" in text_lower
+            is_rem = "relevamiento de expectativas" in text_lower
+
+            if is_informe_monetario and informe_monetario_count >= MAX_INFORME_MONETARIO:
+                continue
+            if is_rem and rem_count >= MAX_REM:
+                continue
+
             # Generate unique ID from URL
             item_id = href.rstrip("/").split("/")[-1].replace(".pdf", "").replace(".asp", "")
 
@@ -285,6 +300,12 @@ def scrape_informes() -> List[ReportItem]:
                 url=full_url,
                 pdf_url=pdf_url,
             ))
+
+            # Increment counters after adding the item
+            if is_informe_monetario:
+                informe_monetario_count += 1
+            if is_rem:
+                rem_count += 1
 
     except Exception as e:
         print(f"Error scraping informes: {e}")

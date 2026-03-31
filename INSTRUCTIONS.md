@@ -62,7 +62,21 @@ ANTHROPIC_API_KEY=sk-ant-api03-...
 
 ### 4. Excel Data File
 
-Ensure `seriesAPI_BCRA_Digest.xlsx` is in the project root with the required series data.
+The `seriesAPI_BCRA_Digest.xlsx` file contains the monetary data series. It is updated automatically by the GitHub Actions workflow, but you can also update it manually.
+
+## Updating Excel Data
+
+### Automatic (GitHub Actions)
+
+The workflow automatically updates the Excel file from BCRA API before each digest run. No manual intervention needed.
+
+### Manual Update
+
+```bash
+python -m src.data_updater
+```
+
+This downloads fresh data from the BCRA API and updates `seriesAPI_BCRA_Digest.xlsx`.
 
 ## Running the Digest
 
@@ -127,7 +141,13 @@ Go to your repository Settings > Secrets and variables > Actions, and add:
 
 ### 2. Workflow Schedule
 
-The workflow runs automatically every Monday at 7:00 AM Argentina time (10:00 UTC).
+The workflow runs automatically every Monday at 10:00 AM Mexico City time (16:00 UTC).
+
+The workflow performs these steps:
+1. Updates Excel data from BCRA API
+2. Generates charts and digest
+3. Sends email
+4. Commits updated files (Excel, state, cache)
 
 To trigger manually:
 1. Go to Actions tab
@@ -142,6 +162,7 @@ bcra-monitor/
 ├── src/
 │   ├── main.py           # Main orchestrator
 │   ├── config.py         # Configuration
+│   ├── data_updater.py   # BCRA API data download
 │   ├── excel_reader.py   # Excel data processing
 │   ├── charts.py         # Chart generation
 │   ├── scraper.py        # Web scraping
@@ -153,6 +174,7 @@ bcra-monitor/
 │   └── email_template.html
 ├── data/
 │   ├── state.json        # Tracks processed items
+│   ├── summaries_cache.json  # Cached AI summaries
 │   ├── charts/           # Generated charts
 │   └── digest_preview.html
 ├── seriesAPI_BCRA_Digest.xlsx
