@@ -124,7 +124,7 @@ Resumen:"""
 
     try:
         response = client.messages.create(
-            model="claude-3-haiku-20240307",  # Fast and cost-effective
+            model="claude-haiku-4-5",  # Fast and cost-effective
             max_tokens=max_tokens,
             messages=[
                 {"role": "user", "content": prompt}
