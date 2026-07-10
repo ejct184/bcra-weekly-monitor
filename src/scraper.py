@@ -16,6 +16,7 @@ from .config import (
     BCRA_INFORMES_URL,
     BCRA_POLITICA_URL,
     BCRA_COMUNICADOS_URL,
+    BCRA_PUBLICACIONES_API,
     STATE_FILE,
     DATA_DIR,
 )
@@ -129,6 +130,28 @@ def fetch_news(days: int = 7) -> List[NewsItem]:
     return items
 
 
+def fetch_publicacion(category: str) -> Optional[dict]:
+    """Fetch the most recent publicación for a given BCRA category slug.
+
+    Uses the BCRA WordPress REST API. Returns the raw dict for the first
+    (most recent) item, or None if the request fails or the list is empty.
+    """
+    try:
+        response = requests.get(
+            BCRA_PUBLICACIONES_API,
+            params={"category": category, "lang": "es"},
+            timeout=30,
+        )
+        response.raise_for_status()
+        data = response.json()
+        publicaciones = data.get("data", {}).get("publicaciones", [])
+        if publicaciones:
+            return publicaciones[0]
+    except Exception as e:
+        print(f"Error fetching publicación '{category}': {e}")
+    return None
+
+
 def parse_spanish_date(date_str: str) -> datetime:
     """Parse Spanish date format like '29 de enero de 2026'."""
     months = {
@@ -208,107 +231,54 @@ def extract_pdf_from_page(page_url: str) -> Optional[str]:
     return None
 
 
-def scrape_informes() -> List[ReportItem]:
-    """Scrape the informes page for specific reports only.
+def _build_publicacion_item(pub: dict, item_cls, **extra) -> Optional[object]:
+    """Build a ReportItem/PolicyItem from a publicación dict returned by the API."""
+    url = pub.get("url", "")
+    if not url:
+        return None
 
-    Only captures the most recent of each:
-    - Informe Monetario Mensual (1 most recent)
-    - Relevamiento de Expectativas de Mercado (REM) (1 most recent)
+    item_id = url.rstrip("/").split("/")[-1].replace(".pdf", "").replace(".asp", "")
+
+    titulo = pub.get("titulo", "").strip()
+    periodo = pub.get("periodo", "").strip()
+    title = f"{titulo} – {periodo}" if titulo and periodo else (titulo or periodo)
+
+    date_str = pub.get("fecha", "")
+    parsed_date = parse_short_spanish_date(date_str)
+    formatted_date = (
+        format_date_spanish(parsed_date)
+        if parsed_date
+        else (date_str if date_str else datetime.now().strftime("%Y-%m-%d"))
+    )
+
+    pdf_url = extract_pdf_from_page(url)
+    time.sleep(0.3)
+
+    return item_cls(
+        id=item_id,
+        title=title,
+        date=formatted_date,
+        url=url,
+        pdf_url=pdf_url,
+        **extra,
+    )
+
+
+def scrape_informes() -> List[ReportItem]:
+    """Fetch the most recent Informe Monetario Mensual and REM.
+
+    Uses the BCRA publicaciones REST API (the site's /informes/ page no
+    longer contains a static HTML table).
     """
     items = []
-    seen_ids = set()
 
-    # Limits per report type (only capture the most recent of each)
-    MAX_INFORME_MONETARIO = 1
-    MAX_REM = 1
-    informe_monetario_count = 0
-    rem_count = 0
-
-    # Specific patterns to match (case insensitive)
-    WANTED_REPORTS = [
-        "informe monetario mensual",
-        "relevamiento de expectativas",
-    ]
-
-    try:
-        response = requests.get(BCRA_INFORMES_URL, timeout=30)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        # Find all table rows that contain report info
-        for row in soup.find_all("tr"):
-            cells = row.find_all("td")
-            if len(cells) < 4:
-                continue
-
-            # Check for links in this row
-            link = row.find("a", href=True)
-            if not link:
-                continue
-
-            href = link["href"]
-            text = link.get_text(strip=True)
-            text_lower = text.lower()
-
-            # Check if it matches any of the wanted reports
-            if not any(pattern in text_lower for pattern in WANTED_REPORTS):
-                continue
-
-            # Skip navigation/generic links
-            if len(text) < 10:
-                continue
-
-            # Check limits per report type - only capture the most recent of each
-            is_informe_monetario = "informe monetario mensual" in text_lower
-            is_rem = "relevamiento de expectativas" in text_lower
-
-            if is_informe_monetario and informe_monetario_count >= MAX_INFORME_MONETARIO:
-                continue
-            if is_rem and rem_count >= MAX_REM:
-                continue
-
-            # Generate unique ID from URL
-            item_id = href.rstrip("/").split("/")[-1].replace(".pdf", "").replace(".asp", "")
-
-            # Skip duplicates
-            if item_id in seen_ids:
-                continue
-            seen_ids.add(item_id)
-
-            # Extract date from the last cell (última actualización)
-            date_str = cells[-1].get_text(strip=True)
-            parsed_date = parse_short_spanish_date(date_str)
-            if parsed_date:
-                formatted_date = format_date_spanish(parsed_date)
-            else:
-                formatted_date = date_str if date_str else datetime.now().strftime("%Y-%m-%d")
-
-            full_url = href if href.startswith("http") else f"https://www.bcra.gob.ar{href}"
-
-            # Check if it's a PDF link or need to extract from page
-            if href.endswith(".pdf"):
-                pdf_url = full_url
-            else:
-                # Navigate to the page and find the PDF
-                pdf_url = extract_pdf_from_page(full_url)
-                time.sleep(0.3)  # Rate limiting
-
-            items.append(ReportItem(
-                id=item_id,
-                title=text,
-                date=formatted_date,
-                url=full_url,
-                pdf_url=pdf_url,
-            ))
-
-            # Increment counters after adding the item
-            if is_informe_monetario:
-                informe_monetario_count += 1
-            if is_rem:
-                rem_count += 1
-
-    except Exception as e:
-        print(f"Error scraping informes: {e}")
+    for category in ("informe-monetario-mensual", "rem"):
+        pub = fetch_publicacion(category)
+        if not pub:
+            continue
+        item = _build_publicacion_item(pub, ReportItem)
+        if item:
+            items.append(item)
 
     return items
 
@@ -385,90 +355,21 @@ def scrape_latest_comunicado() -> Optional[PolicyItem]:
 
 
 def scrape_politica_monetaria() -> List[PolicyItem]:
-    """Scrape monetary policy page for IPOM and Comunicados.
+    """Fetch the most recent IPOM plus the latest comunicado.
 
-    Only captures:
-    - Informe de Política Monetaria (IPOM) - only the most recent one
-    - Comunicados de Política Monetaria - only the most recent one
+    IPOM comes from the BCRA publicaciones REST API. Comunicado still comes
+    from the dedicated comunicados HTML page.
     """
     items = []
     seen_ids = set()
-    ipom_count = 0
-    MAX_IPOM = 1  # Only capture the most recent IPOM
 
-    # Patterns to match for IPOM
-    IPOM_PATTERNS = [
-        "informe de política monetaria",
-        "ipom",
-    ]
+    pub = fetch_publicacion("informe-de-politica-monetaria")
+    if pub:
+        item = _build_publicacion_item(pub, PolicyItem, category="IPOM")
+        if item:
+            items.append(item)
+            seen_ids.add(item.id)
 
-    try:
-        response = requests.get(BCRA_POLITICA_URL, timeout=30)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        # Find IPOM in table rows
-        for row in soup.find_all("tr"):
-            cells = row.find_all("td")
-            if len(cells) >= 4:
-                link = row.find("a", href=True)
-                if not link:
-                    continue
-
-                href = link["href"]
-                text = link.get_text(strip=True)
-                text_lower = text.lower()
-
-                # Only look for IPOM here
-                is_ipom = any(pattern in text_lower for pattern in IPOM_PATTERNS)
-                if not is_ipom:
-                    continue
-
-                if len(text) < 10:
-                    continue
-
-                # Check if we've already captured enough IPOMs
-                if ipom_count >= MAX_IPOM:
-                    continue
-
-                item_id = href.rstrip("/").split("/")[-1].replace(".pdf", "").replace(".asp", "")
-
-                if item_id in seen_ids:
-                    continue
-                seen_ids.add(item_id)
-
-                # Extract date from the last cell
-                date_str = cells[-1].get_text(strip=True)
-                parsed_date = parse_short_spanish_date(date_str)
-                if parsed_date:
-                    formatted_date = format_date_spanish(parsed_date)
-                else:
-                    formatted_date = date_str if date_str else datetime.now().strftime("%Y-%m-%d")
-
-                ipom_count += 1
-
-                full_url = href if href.startswith("http") else f"https://www.bcra.gob.ar{href}"
-
-                # Check if it's already a PDF or need to extract from page
-                if href.endswith(".pdf"):
-                    pdf_url = full_url
-                else:
-                    pdf_url = extract_pdf_from_page(full_url)
-                    time.sleep(0.3)  # Rate limiting
-
-                items.append(PolicyItem(
-                    id=item_id,
-                    title=text,
-                    date=formatted_date,
-                    url=full_url,
-                    pdf_url=pdf_url,
-                    category="IPOM",
-                ))
-
-    except Exception as e:
-        print(f"Error scraping política monetaria: {e}")
-
-    # Also get the latest comunicado from the dedicated comunicados page
     comunicado = scrape_latest_comunicado()
     if comunicado and comunicado.id not in seen_ids:
         items.append(comunicado)
